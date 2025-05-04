@@ -1,0 +1,19 @@
+# version: '3.8'
+
+services:
+  websocket-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: maravian-sockets
+    ports:
+      - "${PORT:-6071}:6071"
+    environment:
+      - PORT=6071
+      - NODE_ENV=production
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+    # If you want to use the .env file directly
+    env_file:
+      - .env
