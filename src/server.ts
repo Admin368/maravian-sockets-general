@@ -13,8 +13,16 @@ const channels = new Map<string, Set<WebSocket>>();
 
 console.log(`WebSocket server started on port ${PORT}`);
 
+interface returnType {
+    channel?: string;
+    type: 'status'  | 'message' | 'error'| 'data';
+    message?: string;
+    data?: any;
+}
+
 wss.on('connection', (ws) => {
-    console.log('Client connected');
+    const connectUsers = wss.clients.size;
+    console.log(`Client connected, Connected users: ${connectUsers}`);
 
     // Store the channels this client is subscribed to
     const subscribedChannels = new Set<string>();
@@ -27,8 +35,13 @@ wss.on('connection', (ws) => {
             // Expected message format: { type: 'subscribe' | 'publish', channel: string, data?: any }
             const { type, channel, data } = parsedMessage;
 
-            if (!type || !channel) {
-                ws.send(JSON.stringify({ error: 'Invalid message format. Missing type or channel.' }));
+            if (!type && !channel) {
+                const returnData: returnType = {
+                    channel,
+                    type: 'error',
+                    message: 'Invalid message format. Missing type and channel.'
+                }
+                ws.send(JSON.stringify(returnData));
                 return;
             }
 
@@ -40,36 +53,73 @@ wss.on('connection', (ws) => {
                     channels.get(channel)?.add(ws);
                     subscribedChannels.add(channel);
                     console.log(`Client subscribed to channel: ${channel}`);
-                    ws.send(JSON.stringify({ status: 'subscribed', channel }));
+                    const returnData: returnType = {
+                        channel,
+                        type: 'status',
+                        message: `You have subscribed to channel ${channel}`
+                    }
+                    ws.send(JSON.stringify(returnData));
                     break;
-
                 case 'publish':
+                    if(!data){
+                        const returnData: returnType = {
+                            channel,
+                            type: 'error',
+                            message: 'Invalid message format. Missing data.'
+                        }
+                        ws.send(JSON.stringify(returnData));
+                        return;
+                    }
                     if (channels.has(channel)) {
-                        const messageToSend = JSON.stringify({ type: 'message', channel, data });
+                        // const messageToSend = JSON.stringify({ type: 'message', channel, data });
                         console.log(`Publishing to channel ${channel}:`, data);
                         channels.get(channel)?.forEach(client => {
                             // Send to all clients in the channel except the sender
                             if (client !== ws && client.readyState === WebSocket.OPEN) {
-                                client.send(messageToSend);
+                                // client.send(messageToSend);
+                                const returnData: returnType = {
+                                    channel,
+                                    type: 'data',
+                                    message: "New data received",
+                                    data,
+                                }
+                                ws.send(JSON.stringify(returnData));
                             }
                         });
                     } else {
-                         console.log(`Channel ${channel} does not exist or has no subscribers.`);
-                         // Optionally notify sender: ws.send(JSON.stringify({ status: 'publish_failed', channel, reason: 'No subscribers' }));
+                         const message = `Publish failed, Channel ${channel} does not exist or has no subscribers.`;
+                         console.log(message);
+                         const returnData: returnType = {
+                            channel,
+                            type: 'error',
+                            message,
+                        }
+                        ws.send(JSON.stringify(returnData));
                     }
                     break;
 
                 default:
-                    ws.send(JSON.stringify({ error: `Unknown message type: ${type}` }));
+                    const returnData2: returnType = {
+                        channel,
+                        type: 'error',
+                        message:`Unknown message type: ${type}, valid types publish | subscribe`,
+                    }
+                    ws.send(JSON.stringify(returnData2));
             }
         } catch (error) {
             console.error('Failed to process message:', error);
-            ws.send(JSON.stringify({ error: 'Invalid JSON message received.' }));
+            const message = 'Failed to process message. Invalid JSON format.';
+            const returnData: returnType = {
+                type: 'error',
+                message,
+            }
+            ws.send(JSON.stringify(returnData));
         }
     });
 
     ws.on('close', () => {
-        console.log('Client disconnected');
+        const connectUsers = wss.clients.size;
+        console.log(`Client disconnected, Connected users: ${connectUsers}`);
         // Unsubscribe from all channels the client was subscribed to
         subscribedChannels.forEach(channel => {
             channels.get(channel)?.delete(ws);
@@ -94,7 +144,12 @@ wss.on('connection', (ws) => {
         subscribedChannels.clear();
     });
 
-    ws.send(JSON.stringify({ message: 'Welcome to the WebSocket server!' }));
+    const returnData: returnType = {
+        channel: undefined,
+        type: 'status',
+        message: 'Welcome to the WebSocket server!'
+    }
+    ws.send(JSON.stringify(returnData));
 });
 
 wss.on('error', (error) => {
